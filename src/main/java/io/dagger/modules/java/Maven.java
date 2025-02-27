@@ -142,6 +142,17 @@ public class Maven extends AbstractModule {
     return this;
   }
 
+  @Function
+  public File file(String path) {
+    return this.container.file(path);
+  }
+
+  @Function
+  public Maven withNewFile(String path, String content) {
+    this.container = this.container.withNewFile(path, content);
+    return this;
+  }
+
   private List<String> mvnCommand(List<String> commands) {
     List<String> result = new java.util.ArrayList<>();
     result.add(useWrapper ? "./mvnw" : "mvn");
