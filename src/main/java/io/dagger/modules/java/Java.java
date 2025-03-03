@@ -29,4 +29,9 @@ public class Java extends AbstractModule {
     String graalVMImage = from.orElse("%s@%s".formatted(graalvmImage, graalvmDigest));
     return maven(sources, Optional.of(graalVMImage), Optional.of(true));
   }
+
+  @Function
+  public Quarkus quarkus(Directory sources) {
+    return new Quarkus(this.dag, sources);
+  }
 }
