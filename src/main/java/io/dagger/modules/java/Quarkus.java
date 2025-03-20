@@ -1,16 +1,15 @@
 package io.dagger.modules.java;
 
-import io.dagger.client.Client;
+
 import io.dagger.client.Container;
 import io.dagger.client.Directory;
-import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.Optional;
 
 @Object
-public class Quarkus extends AbstractModule {
+public class Quarkus {
   private static final String graalvmImage = "ghcr.io/graalvm/jdk-community:23";
   private static final String graalvmDigest =
       "sha256:4ae63cc6caa75d0f5d144c20ed4a17760994fd12c8ceb8b7dc6e405f1593ac65";
@@ -19,8 +18,7 @@ public class Quarkus extends AbstractModule {
 
   public Quarkus() {}
 
-  public Quarkus(Client dag, Directory directory) {
-    super(dag);
+  public Quarkus(Directory directory) {
     this.directory = directory;
   }
 
@@ -46,7 +44,7 @@ public class Quarkus extends AbstractModule {
   }
 
   public Directory pkg() {
-    Maven mvn = new Maven(this.dag, Optional.of(directory), Optional.empty(), Optional.of(false));
+    Maven mvn = new Maven(Optional.of(directory), Optional.empty(), Optional.of(false));
     return mvn.pkg().directory(".");
   }
 
@@ -54,7 +52,6 @@ public class Quarkus extends AbstractModule {
   public Directory nativePkg() {
     Maven mvn =
         new Maven(
-            this.dag,
             Optional.of(directory),
             Optional.of("%s@%s".formatted(graalvmImage, graalvmDigest)),
             Optional.of(true));

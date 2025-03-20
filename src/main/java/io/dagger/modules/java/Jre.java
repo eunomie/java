@@ -1,14 +1,15 @@
 package io.dagger.modules.java;
 
+import static io.dagger.client.Dagger.dag;
+
 import io.dagger.client.*;
-import io.dagger.module.AbstractModule;
 import io.dagger.module.annotation.Function;
 import io.dagger.module.annotation.Object;
 import java.util.List;
 import java.util.Optional;
 
 @Object
-public class Jre extends AbstractModule {
+public class Jre {
   private static final String jreImage = "eclipse-temurin:23-jre-alpine-3.21";
   private static final String jreDigest =
       "sha256:88593498863c64b43be16e8357a3c70ea475fc20a93bf1e07f4609213a357c87";
@@ -18,9 +19,8 @@ public class Jre extends AbstractModule {
 
   public Jre() {}
 
-  public Jre(Client dag, Optional<String> from) {
-    super(dag);
-    this.container = dag.container().from(from.orElse("%s@%s".formatted(jreImage, jreDigest)));
+  public Jre(Optional<String> from) {
+    this.container = dag().container().from(from.orElse("%s@%s".formatted(jreImage, jreDigest)));
   }
 
   /** Copy JAR file to the container */
