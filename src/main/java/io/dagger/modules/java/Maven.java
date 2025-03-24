@@ -118,6 +118,12 @@ public class Maven {
     return this;
   }
 
+  /** Return standard outout */
+  @Function
+  public String stdout() throws ExecutionException, DaggerQueryException, InterruptedException {
+    return this.container.stdout();
+  }
+
   /** Retrieves this maven module with a different working directory. */
   @Function
   public Maven withWorkdir(String path) {
