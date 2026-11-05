@@ -1,7 +1,8 @@
 # Maven
 
 A [Dagger](https://dagger.io) module written in Dang for compiling, testing,
-packaging, and publishing Maven projects. Requires Dagger v1.0.0-beta.21 or later.
+packaging, and publishing Maven projects. Requires and is tested with Dagger
+v1.0.0-beta.25.
 
 ## Install and verify
 
@@ -25,9 +26,10 @@ Use `dagger check` for CI verdicts. Calling a check through the API returns a
 
 `projects` is a collection keyed by workspace-relative root directory, with `.`
 representing the workspace root. Automatic discovery selects outermost
-directories containing `pom.xml`, excluding `target`, `.m2`, `.git`, and
-`node_modules`. Maven itself selects and orders reactor members, including
-profile-dependent modules; the module does not attempt to interpret POM XML.
+directories containing `pom.xml`, excluding `target`, `.m2`, `.git`,
+`node_modules`, and gitignored files. Maven itself selects and orders reactor
+members, including profile-dependent modules; the module does not attempt to
+interpret POM XML.
 
 From a reactor's subdirectory, discovery still selects its root. From elsewhere,
 it selects reactors below the working directory. Members are not checked twice.
@@ -75,14 +77,14 @@ dagger -c 'maven | project --path=. | tests | get app/example.AppTest | test | s
 ```
 
 From another Dang module, select several classes using `subset` and run them
-together through `batch`:
+together:
 
 ```dang
 let classes = maven.project(".").tests(ws)
 classes.subset(keys: [
   "app/example.AppTest",
   "library/example.LibraryTest",
-]).batch.test(ws).sync
+]).test(ws).sync
 ```
 
 A selection runs **one `mvn test` invocation for the reactor**, with a separate
@@ -199,8 +201,11 @@ base and `toolchains`; paths in toolchains.xml refer to JDKs inside that image.
 For reactor selection, pass Maven's own flags, such as `args = ["-pl", "app",
 "-am"]`. The whole workspace stays available, preserving sibling modules,
 relative parent POMs, resources, `.mvn/maven.config`, and `.mvn/jvm.config`.
-Host `target` trees and local dependency caches are excluded, and `.gitignore`
-is respected. Builds requiring Git metadata can supply it in a custom base.
+Host `target` trees, local dependency caches, and files matched by `.gitignore`
+(including nested `.gitignore` files) are excluded. Discovery applies the same
+rules, so it never selects a POM that the build cannot see; an explicit root
+whose `pom.xml` is ignored fails with `no pom.xml`. Builds requiring Git
+metadata can supply it in a custom base.
 
 ## Caching and publishing
 
@@ -208,8 +213,12 @@ The local repository is `/maven/repository`; wrapper distributions also live
 under `/maven`. A locked cache volume prevents concurrent Maven processes from
 writing the same repository. By default each workspace and reactor has its own
 cache; use `cacheKey` to choose a stable namespace for synthetic Directory
-workspaces or intentionally share dependencies. Build outputs remain in the
-container snapshot, outside the dependency cache.
+workspaces or intentionally share dependencies. A shared key serializes the
+Maven processes using it and shares everything in the local repository,
+including artifacts placed there by `install`, not only downloads. Build outputs
+remain in the container snapshot, outside the dependency cache. Each operation
+is its own Maven invocation, so `compile`, `test`, `build`, `verify`, and
+`reports` may each execute separately.
 
 Dependencies resolve during normal Maven execution. There is no mandatory
 `dependency:go-offline` stage: reactor artifacts and plugins that need source
@@ -233,7 +242,7 @@ publish(ws: Workspace!, settings: Secret!): String! {
 }
 
 check(ws: Workspace!): Void {
-  let result = maven.projects(ws).batch.verify(ws)
+  let result = maven.projects(ws).verify(ws)
   if (result.pass == false) {
     raise result.error.message ?? "Maven verification failed"
   }
@@ -250,7 +259,15 @@ From the repository root (the parent of this directory):
 
 ```sh
 dang fmt -w maven/main.dang .dagger/modules/e2e/main.dang
-dagger check
+```
+
+Run the integration checks one at a time; running them all at once starts
+many Maven builds concurrently:
+
+```sh
+for check in $(dagger check -l | awk '$1 == "maven-checks" { print $2 }'); do
+  dagger check "maven-checks:$check" || exit 1
+done
 ```
 
 The suite covers discovery and cwd selection, source filtering, configuration,
