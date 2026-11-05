@@ -83,18 +83,6 @@ type Maven {
     root == "." or path == root or path.hasPrefix(root + "/")
   }
 
-  # findRoots returns paths relative to the workspace cwd, even with start=/.
-  let rootPath(ws: Workspace!, path: String!): String! {
-    let parts = path.split("/").reject { part => part == "" or part == "." }
-    let up = parts.filter { part => part == ".." }.length
-    let resolved = ws
-      .cwd
-      .split("/")
-      .reject { part => part == "" }
-      .dropLast(up) + parts.reject { part => part == ".." }
-    if (resolved.isEmpty) { "." } else { resolved.join("/") }
-  }
-
   """
   Reactor roots in view, keyed by workspace-relative directory. Discovery uses
   outermost pom.xml directories so reactor members are not built twice.
@@ -102,9 +90,11 @@ type Maven {
   """
   projects(ws: Workspace!): MavenProjects! {
     let found = if (roots.isEmpty) {
+      # Unlike findRoots, this read applies .gitignore, as source does.
       ws
-        .findRoots(markers: ["pom.xml"], start: "/", exclude: excludes)
-        .map { path => rootPath(ws, path) }
+        .directory("/", include: ["**/pom.xml"], exclude: excludes, gitignore: true)
+        .glob("**/pom.xml")
+        .map { file => relativePath(file.split("/").dropLast(1).join("/")) }
         .uniq
     } else {
       roots.map { path => relativePath(path) }.uniq
@@ -142,10 +132,11 @@ type Maven {
 
   """
   Workspace source, preserving sibling modules, relative parents, .mvn config,
-  resources, and build scripts. Host targets and dependency caches are excluded.
+  resources, and build scripts. Host targets, dependency caches, and gitignored
+  files are excluded.
   """
   source(ws: Workspace!): Directory! {
-    ws.directory("/", exclude: excludes)
+    ws.directory("/", exclude: excludes, gitignore: true)
   }
 
   let image: Container! {

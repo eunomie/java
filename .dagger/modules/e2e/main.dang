@@ -137,7 +137,7 @@ type E2e {
       one.directory(".").glob("app/target/surefire-reports/TEST-example.AppIT.xml").isEmpty,
       "POM includes escaped the class selection",
     )
-    let batch = classes.subset(keys: ["app/example.AppTest", "app/example.SecondTest", "library/example.LibraryTest"]).batch.test(source)
+    let batch = classes.subset(keys: ["app/example.AppTest", "app/example.SecondTest", "library/example.LibraryTest"]).test(source)
     batch.file("app/target/surefire-reports/TEST-example.AppTest.xml").sync
     batch.file("app/target/surefire-reports/TEST-example.SecondTest.xml").sync
     batch.file("library/target/surefire-reports/TEST-example.LibraryTest.xml").sync
@@ -146,7 +146,7 @@ type E2e {
       "batch ran the dependency's unselected duplicate",
     )
     assert(batch.stdout.split("BUILD SUCCESS").length == 2, "the subset ran more than one Maven invocation")
-    let empty = classes.subset(keys: []).batch.test(source)
+    let empty = classes.subset(keys: []).test(source)
     assert(empty.directory(".").glob("**/target/**").isEmpty, "an empty subset executed Maven")
     null
   }
@@ -252,6 +252,8 @@ type E2e {
       .withNewFile("one/target/generated/pom.xml", "<project/>")
       .withNewFile(".m2/pom.xml", "<project/>")
       .withNewFile("one/child/src/Main.java", "// source")
+      .withNewFile(".gitignore", "ignored/\n")
+      .withNewFile("ignored/pom.xml", "<project/>")
     let ws = source.asWorkspace
     assert(maven.projects(ws).keys == ["one", "two"], "expected two reactor roots")
     assert(
@@ -271,6 +273,10 @@ type E2e {
       err: Error => err.message
     }
     assert(missing.contains("no pom.xml"), "missing POM was not diagnosed")
+    let ignored = { maven(roots: ["ignored"]).projects(ws).get(key: "ignored").container(ws).sync; "passed" } rescue {
+      err: Error => err.message
+    }
+    assert(ignored.contains("no pom.xml"), "an ignored explicit root was not diagnosed")
     null
   }
 
@@ -288,16 +294,43 @@ type E2e {
       .withNewFile("child/target/stale.jar", "stale")
       .withNewFile(".m2/settings.xml", "host settings")
       .withNewFile(".git/config", "host git config")
+      .withNewFile(".gitignore", "ignored/\n")
+      .withNewFile("ignored/pom.xml", "<project/>")
+      .withNewFile("child/.gitignore", "*.tmp\n!keep.tmp\n")
+      .withNewFile("child/scratch.tmp", "scratch")
+      .withNewFile("child/keep.tmp", "kept")
       .asWorkspace
     let source = maven.source(ws)
     assert(source.glob("**/target/**").isEmpty, "host targets leaked into source")
     assert(source.glob("**/.m2/**").isEmpty, "host Maven home leaked into source")
     assert(source.glob("**/.git/**").isEmpty, "host git data leaked into source")
+    assert(source.glob("ignored/**").isEmpty, "an ignored root leaked into source")
+    assert(source.glob("child/scratch.tmp").isEmpty, "nested ignore rules were not applied")
+    assert(source.file("child/keep.tmp").contents == "kept", "lost a re-included file")
+    assert(ws.directory("/").file("child/scratch.tmp").contents == "scratch", "source filtering changed the input")
     assert(source.file(".mvn/maven.config").contents == "-Pci", "lost Maven config")
     assert(source.file("sibling/pom.xml").contents == "<project/>", "lost sibling POM")
     assert(
       source.file("child/src/main/resources/config.txt").contents == "resource",
       "lost resources",
+    )
+    null
+  }
+
+  """
+  Real host files follow the same ignore rules in source and discovery.
+  """
+  sourcePolicyHost(ws: Workspace!): Void @check {
+    let source = maven.source(ws).directory("maven/testdata/source-policy")
+    assert(source.glob("ignored/**").isEmpty, "an ignored root leaked into host source")
+    assert(source.glob("kept/scratch.tmp").isEmpty, "nested ignore rules were not applied")
+    assert(source.file("kept/keep.tmp").contents == "kept\n", "lost a re-included file")
+    let keys = maven.projects(ws).keys
+    assert(keys.contains("maven/testdata/source-policy/kept"), "host discovery missed a kept root")
+    assert(keys.contains("maven/testdata/source-policy/ignored") == false, "host discovery selected an ignored root")
+    assert(
+      ws.file("maven/testdata/source-policy/ignored/pom.xml").contents == "<project/>\n",
+      "host fixture changed",
     )
     null
   }
@@ -414,7 +447,7 @@ type E2e {
       .withDirectory("bad-unit", source.withDirectory(".", badUnit.directory("/")))
       .withDirectory("bad-integration", badIntegration.directory("/"))
       .asWorkspace
-    let check = tool.projects(batch).batch.verify(batch)
+    let check = tool.projects(batch).verify(batch)
     assert(check.pass == false, "failing reactors passed batch verify")
     let message = check.error.message ?? ""
     assert(
